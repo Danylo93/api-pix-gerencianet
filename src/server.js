@@ -1,49 +1,55 @@
-
-if(process.env.NODE_ENV !== 'production'){
+if (process.env.NODE_ENV !== 'production') {
     require('dotenv').config()
-}
-
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-
-
-const cert = fs.readFileSync(
-    path.resolve(__dirname, `../certs/${process.env.GN_CERT}`)
-);
-
-const agent = new https.Agent({
-    pfx:cert,
-    passphrase: ''
-});
-
-const credentials = Buffer.from(
-    `${process.env.GN_CLIENT_ID}:${process.env.GN_CLIENT_SECRET}`
-).toString('base64');
-
-axios({
-    method: 'POST',
-    url: `${process.env.GN_ENDPOINTS}/oauth/token`,
-    headers:{
-        Authorization: `Basic ${credentials}`,
-        'Content-Type': 'application/json'
-    },
-    httpsAgent:agent,
-    data:{
-        grant_type: 'client_credentials'
-    }
-}).then((response) => console.log(response.data));
-
-
-
-console.log(process.env.GN_CLIENT_ID);
-
-
-// curl --request POST \
-//   --url https://api-pix-h.gerencianet.com.br/oauth/token \
-//   --header 'Authorization: Basic Q2xpZW50X0lkXzdmOGE4YjM3OGYwNTJiODliYmUyMjlkYzI0ZjA4MWM5MWExMWQwZmM6Q2xpZW50X1NlY3JldF9jMjg3ODFiN2Q5NjcyZDk0ZGRjYTU0OTBhZDJhM2E1YTRjNDU4OTA1' \
-//   --header 'Content-Type: application/json' \
-//   --data '{
-// 	"grant_type": "client_credentials"
-// }'
+  }
+  
+  const express = require('express');
+  const bodyParser = require('body-parser');
+  const GNRequest = require('./apis/gerencianet');
+  
+  const app = express();
+  
+  app.use(bodyParser.json());
+  
+  app.set('view engine', 'ejs');
+  app.set('views', 'src/views');
+  
+  const reqGNAlready = GNRequest({
+    clientID: process.env.GN_CLIENT_ID,
+    clientSecret: process.env.GN_CLIENT_SECRET
+  });
+  
+  app.get('/', async (req, res) => {
+    const reqGN = await reqGNAlready;
+    const dataCob = {
+      calendario: {
+        expiracao: 3600
+      },
+      valor: {
+        original: '0.10'
+      },
+      chave: 'agenciafaithweb@gmail.com',
+      solicitacaoPagador: 'Cobrança dos serviços prestados.'
+    };
+  
+    const cobResponse = await reqGN.post('/v2/cob', dataCob);
+    const qrcodeResponse = await reqGN.get(`/v2/loc/${cobResponse.data.loc.id}/qrcode`);
+  
+    res.render('qrcode', { qrcodeImage: qrcodeResponse.data.imagemQrcode })
+  });
+  
+  app.get('/cobrancas', async(req, res) => {
+    const reqGN = await reqGNAlready;
+  
+    const cobResponse = await reqGN.get('/v2/cob?inicio=2021-02-15T16:01:35Z&fim=2021-02-22T23:59:00Z');
+  
+    res.send(cobResponse.data);
+  });
+  
+  app.post('/webhook(/pix)?', (req, res) => {
+    console.log(req.body);
+    res.send('200');
+  });
+  
+  app.listen(8000, () => {
+    console.log('running');
+  })
